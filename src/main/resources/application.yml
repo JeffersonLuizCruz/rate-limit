@@ -1,0 +1,42 @@
+spring:
+  cache:
+    jcache:
+      config: classpath:ehcache.xml
+bucket4j:
+  enabled: true
+  filters:
+  - cache-name: buckets
+    url: /users/*
+    rate-limits:
+      - expression: getRemoteAddress() # IP based filter
+        bandwidths: # maximum of 5 requests within 10 seconds
+        - capacity: 5
+          time: 10
+          unit: seconds  
+  - cache-name: buckets
+    strategy: first
+    http-response-body: "{ \"status\": 429, \"error\": \"Too Many Requests\", \"message\": \"You have exhausted your API Request Quota\" }"
+    filter-order: 0
+    url: .*
+    metrics:
+      tags:
+        - key: IP
+          expression: getRemoteAddr()
+          types: REJECTED_COUNTER # for data privacy reasons the IP should only be collected on bucket rejections
+        - key: USERNAME
+          expression: getRemoteAddress()
+        - key: URL
+          expression: request.getRequestURI()
+    rate-limits:
+      - execute-condition:  "@securityService.username() == 'ADMINISTRATOR'"
+        expression: "@securityService.username()?: getRemoteAddr()"
+        bandwidths:
+        - capacity: 5
+          time: 1
+          unit: minutes
+      - execute-condition:  "@securityService.username() == 'TRIAL'"  # user is admin
+        expression:  "@securityService.username()?: getRemoteAddr()"
+        bandwidths:
+        - capacity: 3
+          time: 1
+          unit: minutes
